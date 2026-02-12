@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# environment files
+.env
+.env.local
+.env.production
+
+# next build
+.next/
+
+# logs
+logs
+*.log
+
+# mac files
+.DS_Store
+
+# docker
+*.env

@@ -1,0 +1,378 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  UNPAID
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  BACKLOG
+  BLOCKED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  COMMENT_ADDED
+  MENTION
+  PROJECT_INVITE
+  BILLING
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  passwordHash    String?
+  name            String
+  avatarUrl       String?
+  provider        String?
+  providerId      String?        @unique
+  lastLoginAt     DateTime?
+  isEmailVerified Boolean        @default(false)
+
+  memberships          Membership[]
+  notifications        Notification[]
+  comments             Comment[]
+  tasksAssigned        Task[]         @relation("TaskAssignee")
+  fileUploads          FileUpload[]   @relation("FileUploader")
+  ownedOrganizations   Organization[] @relation("OrganizationOwner")
+  invitedMemberships   Membership[]   @relation("MembershipInvitedBy")
+  ownedProjects        Project[]
+  reportedTasks        Task[]         @relation("TaskReporter")
+  activityLogs         ActivityLog[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  @@index([deletedAt])
+}
+
+model Organization {
+  id            String          @id @default(cuid())
+  name          String
+  slug          String          @unique
+  logoUrl       String?
+  ownerId       String
+  owner         User            @relation("OrganizationOwner", fields: [ownerId], references: [id])
+
+  memberships   Membership[]
+  projects      Project[]
+  subscriptions Subscription[]
+  payments      Payment[]
+  fileUploads   FileUpload[]
+  boards        Board[]
+  tasks         Task[]
+  notifications Notification[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
+
+  @@index([slug])
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+model Membership {
+  id           String        @id @default(cuid())
+  userId       String
+  orgId        String
+  role         Role          @default(MEMBER)
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization  @relation(fields: [orgId], references: [id])
+
+  invitedById  String?
+  invitedBy    User?         @relation("MembershipInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  @@unique([userId, orgId])
+  @@index([orgId, role])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  key            String
+  description    String?
+  ownerId        String
+  owner          User            @relation(fields: [ownerId], references: [id])
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  boards         Board[]
+  tasks          Task[]
+  fileUploads    FileUpload[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([organizationId, deletedAt])
+}
+
+model Board {
+  id             String       @id @default(cuid())
+  organizationId String
+  projectId      String?
+  name           String
+  position       Int          @default(0)
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  project        Project?     @relation(fields: [projectId], references: [id])
+  columns        Column[]
+  tasks          Task[]
+  activities     ActivityLog[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId, projectId])
+  @@index([organizationId, deletedAt])
+}
+
+model Column {
+  id           String        @id @default(cuid())
+  boardId      String
+  name         String
+  position     Int           @default(0)
+
+  board        Board         @relation(fields: [boardId], references: [id])
+  tasks        Task[]
+  activityLogs ActivityLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([boardId, position])
+  @@index([boardId, deletedAt])
+}
+
+model Task {
+  id             String        @id @default(cuid())
+  organizationId String
+  projectId      String
+  boardId        String
+  columnId       String
+  title          String
+  description    String?
+  status         TaskStatus    @default(TODO)
+  priority       TaskPriority  @default(MEDIUM)
+  dueDate        DateTime?
+  estimate       Int?
+  position       Int           @default(0)
+
+  assigneeId     String?
+  assignee       User?         @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  reporterId     String?
+  reporter       User?         @relation("TaskReporter", fields: [reporterId], references: [id])
+
+  organization   Organization  @relation(fields: [organizationId], references: [id])
+  project        Project       @relation(fields: [projectId], references: [id])
+  board          Board         @relation(fields: [boardId], references: [id])
+  column         Column        @relation(fields: [columnId], references: [id])
+
+  comments       Comment[]
+  fileUploads    FileUpload[]
+  activities     ActivityLog[]
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([columnId, position])
+  @@index([assigneeId])
+  @@index([organizationId, deletedAt])
+}
+
+model Comment {
+  id          String       @id @default(cuid())
+  taskId      String
+  authorId    String
+  body        String
+
+  task        Task         @relation(fields: [taskId], references: [id])
+  author      User         @relation(fields: [authorId], references: [id])
+  fileUploads FileUpload[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([taskId])
+  @@index([authorId])
+  @@index([deletedAt])
+}
+
+model Notification {
+  id             String             @id @default(cuid())
+  userId         String
+  organizationId String?
+  type           NotificationType
+  title          String
+  message        String?
+  meta           Json?
+  isRead         Boolean            @default(false)
+  readAt         DateTime?
+
+  user           User               @relation(fields: [userId], references: [id])
+  organization   Organization?      @relation(fields: [organizationId], references: [id])
+
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+
+  @@index([userId, isRead])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model Subscription {
+  id                   String              @id @default(cuid())
+  organizationId       String
+  status               SubscriptionStatus  @default(TRIALING)
+  planId               String
+  stripeCustomerId     String?             @unique
+  stripeSubscriptionId String?             @unique
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  trialEndsAt          DateTime?
+  cancelAtPeriodEnd    Boolean             @default(false)
+
+  organization         Organization        @relation(fields: [organizationId], references: [id])
+  payments             Payment[]
+
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  deletedAt            DateTime?
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  organizationId       String
+  subscriptionId       String?
+  amountCents          Int
+  currency             String        @default("usd")
+  status               String
+  stripePaymentIntentId String?      @unique
+  stripeInvoiceId       String?      @unique
+  metadata             Json?
+
+  organization         Organization  @relation(fields: [organizationId], references: [id])
+  subscription         Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  deletedAt            DateTime?
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model FileUpload {
+  id               String        @id @default(cuid())
+  organizationId   String
+  uploaderId       String
+  taskId           String?
+  projectId        String?
+  commentId        String?
+
+  filename         String
+  mimeType         String
+  sizeBytes        Int
+  storageProvider  String
+  storageKey       String
+  url              String?
+  checksum         String?
+
+  organization     Organization  @relation(fields: [organizationId], references: [id])
+  uploader         User          @relation("FileUploader", fields: [uploaderId], references: [id])
+  task             Task?         @relation(fields: [taskId], references: [id])
+  project          Project?      @relation(fields: [projectId], references: [id])
+  comment          Comment?      @relation(fields: [commentId], references: [id])
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
+
+  @@index([organizationId])
+  @@index([taskId])
+  @@index([projectId])
+  @@index([commentId])
+  @@index([organizationId, deletedAt])
+}
+
+model ActivityLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  boardId        String?
+  columnId       String?
+  taskId         String?
+  userId         String
+  type           String
+  message        String?
+  meta           Json?
+
+  board          Board?       @relation(fields: [boardId], references: [id])
+  column         Column?      @relation(fields: [columnId], references: [id])
+  task           Task?        @relation(fields: [taskId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([taskId])
+  @@index([boardId])
+  @@index([columnId])
+}
+

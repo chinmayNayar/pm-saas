@@ -1,0 +1,86 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { axiosClient } from "../../../lib/axiosClient";
+import { useOrgStore } from "../../../store/orgStore";
+import { KPI } from "../../../components/analytics/kpi-card";
+import { LineChart } from "../../../components/analytics/line-chart";
+
+export default function DashboardPage() {
+  const { currentOrg, setOrgs, setCurrentOrg } = useOrgStore();
+  const [data, setData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [creatingOrg, setCreatingOrg] = useState(false);
+
+  async function createDemoOrg() {
+    try {
+      setCreatingOrg(true);
+      const res = await axiosClient.post("/organizations", {
+        name: "Demo Organization",
+        demo: true
+      });
+      const newOrg = res.data?.data ?? res.data;
+      const list = await axiosClient.get("/organizations");
+      setOrgs(list.data?.data ?? list.data);
+      setCurrentOrg(newOrg);
+    } catch (err) {
+      // swallow for now; UI will still show 'no org' state
+    } finally {
+      setCreatingOrg(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!currentOrg) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    axiosClient
+      .get("/analytics/dashboard", { headers: { "x-org-id": currentOrg.id } })
+      .then((res) => setData(res.data?.data ?? res.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [currentOrg]);
+
+  if (loading) return <div className="text-slate-400">Loading analytics...</div>;
+  if (!currentOrg)
+    return (
+      <div className="rounded-lg bg-slate-900 p-6 text-slate-400 space-y-4">
+        <div>
+          Select an organization above to see analytics, or create a demo one to get
+          started.
+        </div>
+        <button
+          type="button"
+          onClick={createDemoOrg}
+          disabled={creatingOrg}
+          className="rounded bg-primary px-3 py-2 text-sm font-medium disabled:opacity-60"
+        >
+          {creatingOrg ? "Creating demo organization..." : "Create demo organization"}
+        </button>
+      </div>
+    );
+  if (!data)
+    return (
+      <div className="rounded-lg bg-slate-900 p-6 text-slate-400">
+        No analytics data yet. Create boards and tasks to see metrics.
+      </div>
+    );
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-xl font-semibold">Analytics</h1>
+      <div className="grid gap-4 md:grid-cols-3">
+        <KPI label="Total Tasks" value={data.overview?.totalTasks ?? 0} />
+        <KPI label="Completed" value={data.overview?.completedTasks ?? 0} />
+        <KPI label="Overdue" value={data.overview?.overdueTasks ?? 0} />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <LineChart data={data.completionChart ?? []} title="Task Completion (30d)" />
+        <LineChart data={data.monthlyUsage ?? []} title="Monthly Usage (12m)" />
+      </div>
+    </div>
+  );
+}
+

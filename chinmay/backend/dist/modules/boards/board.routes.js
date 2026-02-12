@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.boardRouter = void 0;
+const express_1 = require("express");
+const authMiddleware_1 = require("../../middleware/authMiddleware");
+const loadOrgContext_1 = require("../../middleware/loadOrgContext");
+const board_controller_1 = require("./board.controller");
+exports.boardRouter = (0, express_1.Router)();
+exports.boardRouter.use(authMiddleware_1.authMiddleware, loadOrgContext_1.loadOrgContext);
+exports.boardRouter.get("/:boardId", (req, res, next) => board_controller_1.boardController.getOne(req, res, next));

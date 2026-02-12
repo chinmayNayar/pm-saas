@@ -1,0 +1,68 @@
+services:
+  # PostgreSQL database for the application
+  db:
+    image: postgres:16
+    container_name: pm_saas_db
+    environment:
+      # Database name, user and password must match backend DATABASE_URL
+      POSTGRES_DB: pm_saas
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      # Expose Postgres on host port 5432
+      - "5432:5432"
+    volumes:
+      # Persist database data on host so it survives container restarts
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Basic readiness check to ensure Postgres is accepting connections
+      test: ["CMD-SHELL", "pg_isready -U user -d pm_saas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache for sessions, token blacklists, analytics cache, etc.
+  redis:
+    image: redis:7
+    container_name: pm_saas_redis
+    ports:
+      # Expose Redis on host port 6379
+      - "6379:6379"
+    healthcheck:
+      # Simple ping check for Redis readiness
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Node.js backend API (Express + Prisma + Socket.io)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pm_saas_backend
+    env_file:
+      # Load all application secrets and config from backend/.env
+      - ./backend/.env
+    environment:
+      # Override DB/Redis hosts to point at Docker service names instead of localhost
+      DATABASE_URL: postgresql://user:password@db:5432/pm_saas
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: development
+    ports:
+      # Expose backend HTTP API on host port 4000
+      - "4000:4000"
+    depends_on:
+      # Ensure backend starts only after db and redis are healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # For development you can uncomment the following to mount source and enable faster iteration
+    # volumes:
+    #   - ./backend:/app
+
+volumes:
+  # Docker named volume used for PostgreSQL data persistence
+  postgres_data:
+
